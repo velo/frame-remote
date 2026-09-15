@@ -15,6 +15,8 @@ import com.marvinformatics.frameremote.tv.Ssdp
 import com.marvinformatics.frameremote.tv.Upnp
 import com.marvinformatics.frameremote.tv.Wol
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,6 +59,17 @@ data class UiState(
     val powerState: String = "unknown",
     /** null = unknown (art channel not answering) */
     val artMode: Boolean? = null,
+    /**
+     * Foreground state of the launchable apps (null = unknown). Drives the
+     * amber highlight only — a transient poll failure keeps the previous
+     * value, a sustained one settles back to unknown/grey. There is no Home
+     * equivalent: the firmware exposes no home-screen app id (all candidates
+     * 404), and inferring "home" from everything-else-off also matches live
+     * TV or any untracked app, so Home is deliberately never highlighted —
+     * a highlight that lies is worse than none.
+     */
+    val plexActive: Boolean? = null,
+    val youtubeActive: Boolean? = null,
     val volume: Int? = null,
     val muted: Boolean = false,
     val socketState: RemoteSocket.State = RemoteSocket.State.DISCONNECTED,
@@ -72,6 +85,8 @@ data class UiState(
     val diagRunning: Boolean = false,
     val toast: String? = null,
 )
+
+private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
 class TvViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -123,6 +138,9 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     private var pollJob: Job? = null
     /** While the user is dragging the slider, polling must not fight the thumb. */
     private var volumeTouchedAt = 0L
+    /** Consecutive app-status poll failures; >= 3 settles the highlight to unknown. */
+    private var plexFails = 0
+    private var youtubeFails = 0
 
     init {
         viewModelScope.launch {
@@ -189,6 +207,8 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 reachable = info != null,
                 powerState = info?.powerState ?: "off",
                 artMode = if (info == null) null else it.artMode,
+                plexActive = if (info == null) null else it.plexActive,
+                youtubeActive = if (info == null) null else it.youtubeActive,
             )
         }
         // Opportunistically keep the MAC in sync for Wake-on-LAN.
@@ -201,8 +221,18 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 artSocket.ensureConnected(ip, cfg.token, cfg.clientName)
                 artSocket.requestArtMode()
             }
-            val vol = upnp.getVolume(ip)
-            val mute = if (vol != null) upnp.getMute(ip) else null
+            // One concurrent burst per poll: volume, mute, and the two app
+            // foreground probes (~30 ms each on the LAN).
+            val (vol, mute, plexVis, ytVis) = coroutineScope {
+                val volD = async { upnp.getVolume(ip) }
+                val plexD = async { rest.appVisible(ip, TizenApps.PLEX) }
+                val ytD = async { rest.appVisible(ip, TizenApps.YOUTUBE) }
+                val v = volD.await()
+                val muteD = async { if (v != null) upnp.getMute(ip) else null }
+                Quad(v, muteD.await(), plexD.await(), ytD.await())
+            }
+            plexFails = if (plexVis == null) plexFails + 1 else 0
+            youtubeFails = if (ytVis == null) youtubeFails + 1 else 0
             _state.update {
                 it.copy(
                     // The TV is reachable, so a UPnP failure here means the
@@ -212,6 +242,16 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                     volumeControl = if (vol != null) VolumeControl.ABSOLUTE else VolumeControl.KEYS,
                     volume = if (System.currentTimeMillis() - volumeTouchedAt > 1500) vol ?: it.volume else it.volume,
                     muted = mute ?: it.muted,
+                    plexActive = when {
+                        plexVis != null -> plexVis
+                        plexFails >= 3 -> null
+                        else -> it.plexActive
+                    },
+                    youtubeActive = when {
+                        ytVis != null -> ytVis
+                        youtubeFails >= 3 -> null
+                        else -> it.youtubeActive
+                    },
                 )
             }
         }

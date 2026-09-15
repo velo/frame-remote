@@ -18,6 +18,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PowerSettingsNew
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -68,7 +71,7 @@ fun RemoteScreen(vm: TvViewModel, state: UiState, onOpenSettings: () -> Unit) {
             Spacer(Modifier.height(20.dp))
         }
 
-        AppLaunchRow(vm)
+        AppLaunchRow(vm, state)
 
         Spacer(Modifier.height(20.dp))
 
@@ -122,29 +125,57 @@ private fun Header(state: UiState, onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun AppLaunchRow(vm: TvViewModel) {
+private fun AppLaunchRow(vm: TvViewModel, state: UiState) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        FilledTonalButton(
-            onClick = { vm.launchApp(TizenApps.PLEX, "Plex") },
-            modifier = Modifier
-                .weight(1f)
-                .height(52.dp),
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Text("Plex", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        }
-        FilledTonalButton(
-            onClick = { vm.launchApp(TizenApps.YOUTUBE, "YouTube") },
-            modifier = Modifier
-                .weight(1f)
-                .height(52.dp),
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Text("YouTube", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        }
+        // Neutral Material glyphs, deliberately not the trademarked brand
+        // logos (public MIT repo; F-Droid rejects non-free assets). The
+        // label is what identifies the app; the icon makes the two buttons
+        // distinguishable at a glance.
+        AppButton(
+            label = "Plex",
+            icon = Icons.Filled.Movie,
+            active = state.plexActive == true,
+            modifier = Modifier.weight(1f),
+        ) { vm.launchApp(TizenApps.PLEX, "Plex") }
+        AppButton(
+            label = "YouTube",
+            icon = Icons.Filled.SmartDisplay,
+            active = state.youtubeActive == true,
+            modifier = Modifier.weight(1f),
+        ) { vm.launchApp(TizenApps.YOUTUBE, "YouTube") }
+    }
+}
+
+@Composable
+private fun AppButton(
+    label: String,
+    icon: ImageVector,
+    active: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    // Active = the app is the one visible on the TV right now (the per-app
+    // REST status; keyed off "visible", never "running"). Purely visual —
+    // tapping always just launches.
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier.height(52.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = if (active) {
+            ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            )
+        } else {
+            ButtonDefaults.filledTonalButtonColors()
+        },
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.size(8.dp))
+        Text(label, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

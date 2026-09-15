@@ -54,6 +54,23 @@ class RestApi {
         }.onFailure { lastError = it.message ?: it.javaClass.simpleName }.getOrNull()
     }
 
+    /**
+     * Foreground state of one app. Keys off "visible", NOT "running" — apps
+     * stay running:true loaded in the background, so running would light
+     * every button permanently. Returns null on any error or timeout: this
+     * feeds a purely decorative highlight, so failures must stay silent and
+     * must not disturb [lastError] (which diagnostics reads).
+     */
+    suspend fun appVisible(ip: String, appId: String): Boolean? = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = Request.Builder().url("http://$ip:8001/api/v2/applications/$appId").build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@runCatching null
+                JSONObject(resp.body!!.string()).optBoolean("visible")
+            }
+        }.getOrNull()
+    }
+
     /** Launch an app by Tizen id. Returns true when the TV acknowledged. */
     suspend fun launchApp(ip: String, appId: String): Boolean = withContext(Dispatchers.IO) {
         runCatching {

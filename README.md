@@ -17,7 +17,11 @@ Wi-Fi/BT API 2.0.25), but it should work on most recent Tizen TVs.
 - **Wake TV** — a separate, explicit Wake-on-LAN action for a TV that is
   genuinely powered off (unverified — see below)
 - **D-pad navigation** — up/down/left/right, OK, back, home
-- **One-tap app launch** — Plex and YouTube by Tizen app id
+- **One-tap app launch** — Plex and YouTube by Tizen app id; the button
+  lights amber when that app is the one on screen (per-app REST status,
+  keyed off `visible` — `running` stays true for backgrounded apps). Home
+  is deliberately never highlighted: the firmware exposes no home-screen
+  state, and a guessed highlight would lie
 - **SSDP discovery** — finds the TV on first run and auto-fills its IP and
   MAC; manual entry as fallback
 - Dark, one-handed, thumb-reachable layout
