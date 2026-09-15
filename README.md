@@ -12,8 +12,10 @@ Wi-Fi/BT API 2.0.25), but it should work on most recent Tizen TVs.
 
 - **Absolute volume slider** (0–100, maps 1:1 to the TV's on-screen number)
   plus mute — via UPnP `RenderingControl`, the API SmartThings hides
-- **Power** — off/art-mode via the remote WebSocket, power-on from standby
-  via Wake-on-LAN
+- **Art Mode toggle** — what the power button on a Frame actually does
+  (see "The Frame's power model" below); the button shows the current state
+- **Wake TV** — a separate, explicit Wake-on-LAN action for a TV that is
+  genuinely powered off (unverified — see below)
 - **D-pad navigation** — up/down/left/right, OK, back, home
 - **One-tap app launch** — Plex and YouTube by Tizen app id
 - **SSDP discovery** — finds the TV on first run and auto-fills its IP and
@@ -42,14 +44,35 @@ it updated. You can also just download the APK from the
    phone and the prompt never comes back. ("Forget pairing" in settings
    clears it.)
 
-## Power-on needs network standby
+## The Frame's power model (read this — it will surprise you)
 
-The TV's APIs only answer while it is awake, so powering **on** is done with
-a Wake-on-LAN magic packet to the TV's MAC address. For that to work, enable
-the TV setting usually called **Power On with Mobile** / **Network Standby**
+A Frame TV does not power off from software. Verified on a 2024 LS03D
+(API 2.0.25):
+
+- `KEY_POWER` **toggles Art Mode**, in both directions. The TV's
+  `PowerState` stays `"on"` the whole time — with Art Mode enabled the
+  Frame is never in deep standby; it stays fully network-alive.
+- `KEY_POWEROFF` is a **silent no-op** on this firmware. The TV ignores it.
+- True deep standby is reachable only physically: a long-press on the
+  actual remote, or disabling Art Mode in the TV's settings.
+
+So the app's round button is labelled what it is — an **Art Mode toggle** —
+and shows the TV's current art state, read live over the TV's art-app
+channel.
+
+### Wake TV (Wake-on-LAN) — honest status: unverified
+
+For a TV that is genuinely powered off, the app has a separate, explicit
+**Wake TV** button (shown when the TV stops answering). It sends a standard
+Wake-on-LAN magic-packet burst (UDP 9 and 7; global broadcast, directed
+broadcast and unicast) to the TV's MAC, which the app auto-fills from the
+device info. This is implemented to spec but has **never been observed
+waking this TV** — precisely because no software command can put a Frame
+into the standby state WoL recovers from, so it could not be tested
+end-to-end. For it to have a chance, enable the TV setting usually called
+**Power On with Mobile** / **Network Standby**
 (`Settings → General → Network → Expert Settings`). Wired connections are
-the most reliable. Powering **off** (a short press, which on a Frame drops
-into Art Mode — same as the physical remote) goes over the WebSocket.
+the most reliable.
 
 ## How it talks to the TV
 
@@ -57,9 +80,10 @@ into Art Mode — same as the physical remote) goes over the WebSocket.
 |---|---|
 | Reachability / power state / device info | `GET http://tv:8001/api/v2/` |
 | Absolute volume + mute | UPnP SOAP, `http://tv:9197/upnp/control/RenderingControl1` |
-| Keys (nav, power, back, home) | `wss://tv:8002/api/v2/channels/samsung.remote.control` |
+| Keys (nav, art-mode toggle, back, home) | `wss://tv:8002/api/v2/channels/samsung.remote.control` |
+| Art Mode state | `wss://tv:8002/api/v2/channels/com.samsung.art-app` (`get_artmode_status`) |
 | App launch | `POST http://tv:8001/api/v2/applications/<appId>` (WS `ed.apps.launch` fallback) |
-| Power on | Wake-on-LAN magic packet (UDP 9/7) |
+| Wake TV | Wake-on-LAN magic packet (UDP 9/7) — unverified, see above |
 
 The TV's WebSocket uses a self-signed certificate; the app relaxes TLS
 verification **only** for the configured TV host, never globally.

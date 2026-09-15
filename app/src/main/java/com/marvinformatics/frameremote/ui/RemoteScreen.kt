@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -60,6 +61,11 @@ fun RemoteScreen(vm: TvViewModel, state: UiState, onOpenSettings: () -> Unit) {
         Header(state, onOpenSettings)
 
         Spacer(Modifier.weight(1f))
+
+        if (state.config.isConfigured && !state.reachable) {
+            WakeTvButton(vm)
+            Spacer(Modifier.height(20.dp))
+        }
 
         AppLaunchRow(vm)
 
@@ -225,35 +231,77 @@ private fun DirButton(
 }
 
 @Composable
+private fun WakeTvButton(vm: TvViewModel) {
+    FilledTonalButton(
+        onClick = { vm.wakeTv() },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Icon(Icons.Filled.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.size(8.dp))
+        Text("Wake TV (Wake-on-LAN)", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
 private fun BottomRow(vm: TvViewModel, state: UiState) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
-        FilledTonalIconButton(
-            onClick = { vm.sendKey("KEY_RETURN") },
-            modifier = Modifier.size(64.dp),
-        ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        LabeledAction(label = "Back") {
+            FilledTonalIconButton(
+                onClick = { vm.sendKey("KEY_RETURN") },
+                modifier = Modifier.size(64.dp),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
         }
-        FilledIconButton(
-            onClick = { vm.power() },
-            modifier = Modifier.size(72.dp),
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = if (state.reachable) MaterialTheme.colorScheme.surfaceVariant
-                else MaterialTheme.colorScheme.primary,
-                contentColor = if (state.reachable) Color(0xFFE57373)
-                else MaterialTheme.colorScheme.onPrimary,
-            ),
-        ) {
-            Icon(Icons.Filled.PowerSettingsNew, contentDescription = "Power", modifier = Modifier.size(32.dp))
+        // On a Frame TV, KEY_POWER toggles Art Mode — the TV never powers
+        // down from software. Label the button for what it actually does.
+        val artLabel = when (state.artMode) {
+            true -> "Art Mode · on"
+            false -> "Art Mode · off"
+            null -> "Art Mode"
         }
-        FilledTonalIconButton(
-            onClick = { vm.sendKey("KEY_HOME") },
-            modifier = Modifier.size(64.dp),
-        ) {
-            Icon(Icons.Filled.Home, contentDescription = "Home")
+        LabeledAction(label = artLabel) {
+            FilledIconButton(
+                onClick = { vm.toggleArtMode() },
+                enabled = state.reachable,
+                modifier = Modifier.size(72.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = if (state.artMode == true) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (state.artMode == true) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.primary,
+                ),
+            ) {
+                Icon(Icons.Filled.Wallpaper, contentDescription = "Toggle Art Mode", modifier = Modifier.size(30.dp))
+            }
         }
+        LabeledAction(label = "Home") {
+            FilledTonalIconButton(
+                onClick = { vm.sendKey("KEY_HOME") },
+                modifier = Modifier.size(64.dp),
+            ) {
+                Icon(Icons.Filled.Home, contentDescription = "Home")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LabeledAction(label: String, content: @Composable () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        content()
+        Spacer(Modifier.height(4.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

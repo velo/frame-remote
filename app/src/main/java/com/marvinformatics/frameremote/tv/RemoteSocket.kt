@@ -7,10 +7,6 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
-import java.security.cert.X509Certificate
-import java.util.concurrent.TimeUnit
-import javax.net.ssl.SSLContext
-import javax.net.ssl.X509TrustManager
 
 /**
  * Samsung remote-control WebSocket (wss on port 8002).
@@ -41,19 +37,7 @@ class RemoteSocket(
 
     private fun clientFor(ip: String): OkHttpClient {
         client?.let { if (clientIp == ip) return it }
-        val trustTv = object : X509TrustManager {
-            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
-            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
-            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-        }
-        val ssl = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trustTv), null) }
-        return OkHttpClient.Builder()
-            .sslSocketFactory(ssl.socketFactory, trustTv)
-            .hostnameVerifier { hostname, _ -> hostname == ip }
-            .connectTimeout(3, TimeUnit.SECONDS)
-            .pingInterval(15, TimeUnit.SECONDS)
-            .build()
-            .also { client = it; clientIp = ip }
+        return TvTls.clientFor(ip).also { client = it; clientIp = ip }
     }
 
     /** Opens the socket if needed. Safe to call before every send. */

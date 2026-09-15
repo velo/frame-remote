@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.marvinformatics.frameremote.data.SettingsRepository
 import com.marvinformatics.frameremote.data.TvConfig
 import com.marvinformatics.frameremote.tv.DiscoveredTv
+import com.marvinformatics.frameremote.tv.ArtSocket
 import com.marvinformatics.frameremote.tv.RemoteSocket
 import com.marvinformatics.frameremote.tv.RestApi
 import com.marvinformatics.frameremote.tv.Ssdp
@@ -32,6 +33,8 @@ data class UiState(
     val loaded: Boolean = false,
     val reachable: Boolean = false,
     val powerState: String = "unknown",
+    /** null = unknown (art channel not answering) */
+    val artMode: Boolean? = null,
     val volume: Int? = null,
     val muted: Boolean = false,
     val socketState: RemoteSocket.State = RemoteSocket.State.DISCONNECTED,
@@ -54,6 +57,11 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         clientName = "FrameRemoteAndroid",
         onToken = { token -> viewModelScope.launch { settings.saveToken(token) } },
         onState = { s -> _state.update { it.copy(socketState = s) } },
+    )
+
+    private val artSocket = ArtSocket(
+        clientName = "FrameRemoteAndroid",
+        onArtMode = { on -> _state.update { it.copy(artMode = on) } },
     )
 
     private val volumeRequests = MutableSharedFlow<Int>(extraBufferCapacity = 64)
@@ -96,19 +104,27 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         pollJob?.cancel()
         pollJob = null
         socket.disconnect()
+        artSocket.disconnect()
     }
 
     private suspend fun refreshStatus() {
         val ip = _state.value.config.ip.takeIf { it.isNotBlank() } ?: return
         val info = rest.deviceInfo(ip)
         _state.update {
-            it.copy(reachable = info != null, powerState = info?.powerState ?: "off")
+            it.copy(
+                reachable = info != null,
+                powerState = info?.powerState ?: "off",
+                artMode = if (info == null) null else it.artMode,
+            )
         }
         // Opportunistically keep the MAC in sync for Wake-on-LAN.
         if (info != null && info.wifiMac.isNotBlank() && info.wifiMac != _state.value.config.mac) {
             settings.saveMac(info.wifiMac)
         }
         if (info != null) {
+            val cfg = _state.value.config
+            artSocket.ensureConnected(ip, cfg.token)
+            artSocket.requestArtMode()
             val vol = upnp.getVolume(ip)
             val mute = upnp.getMute(ip)
             _state.update {
@@ -136,29 +152,49 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         socket.sendKey(key)
     }
 
-    /** Power: KEY_POWER while the TV answers, Wake-on-LAN when it does not. */
-    fun power() {
+    /**
+     * KEY_POWER on a Frame is an Art Mode toggle, verified both directions on
+     * a 2024 LS03D: PowerState stays "on" throughout, and KEY_POWEROFF is a
+     * silent no-op on this firmware. Deep standby is only reachable with a
+     * physical long-press, so this button says what it really does.
+     */
+    fun toggleArtMode() {
+        sendKey("KEY_POWER")
+        viewModelScope.launch {
+            // The toggle takes a moment; re-read state so the button label follows.
+            delay(1500)
+            artSocket.requestArtMode()
+            delay(2000)
+            artSocket.requestArtMode()
+        }
+    }
+
+    /**
+     * Wake-on-LAN for a TV that is genuinely powered off. Implemented to
+     * spec (magic-packet burst, ports 9/7, broadcast + directed + unicast)
+     * but NEVER observed waking this TV, because with Art Mode enabled a
+     * Frame never enters deep standby from software. Requires the TV's
+     * network standby ("Power On with Mobile") setting.
+     */
+    fun wakeTv() {
         viewModelScope.launch {
             val cfg = _state.value.config
-            if (_state.value.reachable) {
-                sendKey("KEY_POWER")
-            } else if (cfg.mac.isNotBlank()) {
-                toast("Sending Wake-on-LAN…")
-                Wol.wake(cfg.mac, cfg.ip.takeIf { it.isNotBlank() })
-                // Give the TV a moment, then re-check.
-                repeat(10) {
-                    delay(2000)
-                    refreshStatus()
-                    if (_state.value.reachable) {
-                        toast("TV is awake")
-                        connectSocket()
-                        return@launch
-                    }
-                }
-                toast("TV did not answer — is network standby enabled?")
-            } else {
-                toast("TV unreachable and no MAC configured for Wake-on-LAN")
+            if (cfg.mac.isBlank()) {
+                toast("No MAC configured for Wake-on-LAN")
+                return@launch
             }
+            toast("Sending Wake-on-LAN…")
+            Wol.wake(cfg.mac, cfg.ip.takeIf { it.isNotBlank() })
+            repeat(10) {
+                delay(2000)
+                refreshStatus()
+                if (_state.value.reachable) {
+                    toast("TV is awake")
+                    connectSocket()
+                    return@launch
+                }
+            }
+            toast("TV did not answer — is network standby enabled?")
         }
     }
 
@@ -234,5 +270,6 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         socket.disconnect()
+        artSocket.disconnect()
     }
 }
