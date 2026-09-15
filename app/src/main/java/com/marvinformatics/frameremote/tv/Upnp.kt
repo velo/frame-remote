@@ -15,6 +15,11 @@ import java.util.concurrent.TimeUnit
  */
 class Upnp {
 
+    /** Message from the most recent failed call; null after a success. */
+    @Volatile
+    var lastError: String? = null
+        private set
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(1500, TimeUnit.MILLISECONDS)
         .readTimeout(3, TimeUnit.SECONDS)
@@ -37,9 +42,10 @@ class Upnp {
                     .post(body.toRequestBody(xml))
                     .build()
                 client.newCall(req).execute().use { resp ->
-                    if (resp.isSuccessful) resp.body?.string() else null
+                    if (resp.isSuccessful) resp.body?.string().also { lastError = null }
+                    else { lastError = "HTTP ${resp.code}"; null }
                 }
-            }.getOrNull()
+            }.onFailure { lastError = it.message ?: it.javaClass.simpleName }.getOrNull()
         }
 
     suspend fun getVolume(ip: String): Int? =

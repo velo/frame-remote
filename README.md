@@ -103,6 +103,22 @@ CI builds a signed release APK on every `v*` tag and attaches it to a GitHub
 Release. Signing uses the `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 `KEY_ALIAS` and `KEY_PASSWORD` repository secrets.
 
+## Troubleshooting
+
+- The app pins all its traffic to **Wi-Fi** while open. With mobile data on
+  and a LAN without internet access, Android would otherwise route
+  everything over cellular and the TV would never answer — the classic
+  "app does nothing" failure. If you are not on Wi-Fi, the app says so
+  instead of failing silently.
+- **Settings → Diagnostics** shows the resolved IP/MAC/pairing state and a
+  **Test connection** button that exercises each transport (REST :8001,
+  UPnP :9197, WebSocket :8002, SSDP) and reports per-transport results.
+- If the TV stops accepting keys (token revoked, TV reset), use
+  **Re-pair** in settings: it drops the stored token and reconnects so the
+  TV shows its Allow prompt again.
+- Discovery needs the TV awake; manual IP entry is always available in
+  settings regardless of what discovery finds.
+
 ## Privacy
 
 The app makes no network connections except to the TV's LAN address you

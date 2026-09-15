@@ -24,6 +24,11 @@ data class DeviceInfo(
  */
 class RestApi {
 
+    /** Message from the most recent failed call; null after a success. */
+    @Volatile
+    var lastError: String? = null
+        private set
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(1500, TimeUnit.MILLISECONDS)
         .readTimeout(3, TimeUnit.SECONDS)
@@ -33,7 +38,10 @@ class RestApi {
         runCatching {
             val req = Request.Builder().url("http://$ip:8001/api/v2/").build()
             client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@runCatching null
+                if (!resp.isSuccessful) {
+                    lastError = "HTTP ${resp.code}"
+                    return@runCatching null
+                }
                 val device = JSONObject(resp.body!!.string()).getJSONObject("device")
                 DeviceInfo(
                     name = device.optString("name").replace("&quot;", "\""),
@@ -41,9 +49,9 @@ class RestApi {
                     powerState = device.optString("PowerState", "unknown"),
                     wifiMac = device.optString("wifiMac"),
                     tokenAuthSupport = device.optString("TokenAuthSupport") == "true",
-                )
+                ).also { lastError = null }
             }
-        }.getOrNull()
+        }.onFailure { lastError = it.message ?: it.javaClass.simpleName }.getOrNull()
     }
 
     /** Launch an app by Tizen id. Returns true when the TV acknowledged. */

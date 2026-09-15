@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.marvinformatics.frameremote.data.SettingsRepository
 import com.marvinformatics.frameremote.data.TvConfig
 import com.marvinformatics.frameremote.tv.DiscoveredTv
+import com.marvinformatics.frameremote.tv.WifiNet
+import com.marvinformatics.frameremote.tv.WsProbe
 import com.marvinformatics.frameremote.tv.ArtSocket
 import com.marvinformatics.frameremote.tv.RemoteSocket
 import com.marvinformatics.frameremote.tv.RestApi
@@ -28,6 +30,17 @@ object TizenApps {
     const val YOUTUBE = "111299001912"
 }
 
+data class DiagReport(
+    val wifi: Boolean,
+    val ip: String,
+    val mac: String,
+    val paired: Boolean,
+    val rest: String,
+    val upnp: String,
+    val ws: String,
+    val ssdp: String,
+)
+
 data class UiState(
     val config: TvConfig = TvConfig(),
     val loaded: Boolean = false,
@@ -40,27 +53,41 @@ data class UiState(
     val socketState: RemoteSocket.State = RemoteSocket.State.DISCONNECTED,
     val discovering: Boolean = false,
     val discovered: List<DiscoveredTv> = emptyList(),
+    /** Why the last discovery found nothing — shown inline, not just a toast. */
+    val discoveryError: String? = null,
+    val wifi: Boolean = true,
+    val diag: DiagReport? = null,
+    val diagRunning: Boolean = false,
     val toast: String? = null,
 )
 
 class TvViewModel(app: Application) : AndroidViewModel(app) {
 
+    private companion object {
+        const val CLIENT_NAME = "FrameRemoteAndroid"
+    }
+
     private val settings = SettingsRepository(app)
     private val rest = RestApi()
     private val upnp = Upnp()
-    private val ssdp = Ssdp(rest)
+    private val ssdp = Ssdp(app, rest)
+    private val wifiNet = WifiNet(app)
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
 
     private val socket = RemoteSocket(
-        clientName = "FrameRemoteAndroid",
-        onToken = { token -> viewModelScope.launch { settings.saveToken(token) } },
+        clientName = CLIENT_NAME,
+        onToken = { token ->
+            viewModelScope.launch { settings.saveToken(token) }
+            toast("Paired with the TV")
+        },
         onState = { s -> _state.update { it.copy(socketState = s) } },
+        onError = { msg -> if (msg.contains("refused")) toast(msg) },
     )
 
     private val artSocket = ArtSocket(
-        clientName = "FrameRemoteAndroid",
+        clientName = CLIENT_NAME,
         onArtMode = { on -> _state.update { it.copy(artMode = on) } },
     )
 
@@ -90,6 +117,12 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onResume() {
+        // Pin every socket to Wi-Fi: with mobile data on and a LAN without
+        // internet, Android's default network is cellular and nothing on the
+        // LAN would ever answer. Fail loudly when there is no Wi-Fi at all.
+        val onWifi = wifiNet.bindProcessToWifi()
+        _state.update { it.copy(wifi = onWifi) }
+        if (!onWifi) toast("Not on Wi-Fi — connect the phone to the TV's network")
         if (pollJob?.isActive == true) return
         pollJob = viewModelScope.launch {
             while (true) {
@@ -105,6 +138,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         pollJob = null
         socket.disconnect()
         artSocket.disconnect()
+        wifiNet.unbindProcess()
     }
 
     private suspend fun refreshStatus() {
@@ -229,10 +263,11 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     fun discover() {
         viewModelScope.launch {
-            _state.update { it.copy(discovering = true, discovered = emptyList()) }
-            val found = ssdp.discover()
-            _state.update { it.copy(discovering = false, discovered = found) }
-            if (found.isEmpty()) toast("No TV found — is it awake? You can enter the IP manually.")
+            _state.update { it.copy(discovering = true, discovered = emptyList(), discoveryError = null) }
+            val result = ssdp.discover()
+            _state.update {
+                it.copy(discovering = false, discovered = result.tvs, discoveryError = result.error)
+            }
         }
     }
 
@@ -252,11 +287,67 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Recovery action: drop the stored token and immediately reconnect, so
+     * the TV shows its Allow prompt again and we end PAIRED, not unpaired.
+     */
+    fun refreshPairing() {
+        viewModelScope.launch {
+            settings.clearToken()
+            delay(150) // let the config collector observe the cleared token
+            socket.disconnect()
+            connectSocket()
+            toast("Look at the TV — accept the Allow prompt")
+        }
+    }
+
+    /** Destructive-only variant: clears the token and stays disconnected. */
     fun forgetPairing() {
         viewModelScope.launch {
             settings.clearToken()
             socket.disconnect()
-            toast("Pairing token cleared — the TV will prompt again")
+            toast("Pairing token cleared")
+        }
+    }
+
+    fun runDiagnostics() {
+        viewModelScope.launch {
+            _state.update { it.copy(diagRunning = true) }
+            val cfg = _state.value.config
+            val wifi = wifiNet.wifiNetwork() != null
+            var restR = "skipped — no TV configured"
+            var upnpR = restR
+            var wsR = restR
+            if (cfg.ip.isNotBlank()) {
+                val t0 = System.currentTimeMillis()
+                val info = rest.deviceInfo(cfg.ip)
+                restR = if (info != null)
+                    "ok — PowerState ${info.powerState} (${System.currentTimeMillis() - t0} ms)"
+                else "FAILED — ${rest.lastError ?: "no response"}"
+                val t1 = System.currentTimeMillis()
+                val vol = upnp.getVolume(cfg.ip)
+                upnpR = if (vol != null)
+                    "ok — volume $vol (${System.currentTimeMillis() - t1} ms)"
+                else "FAILED — ${upnp.lastError ?: "no response"}"
+                wsR = WsProbe.test(cfg.ip, cfg.token, CLIENT_NAME)
+            }
+            val sd = ssdp.discover()
+            val ssdpR = sd.error ?: "ok — found ${sd.tvs.joinToString { "${it.name} (${it.ip})" }}"
+            _state.update {
+                it.copy(
+                    diagRunning = false,
+                    diag = DiagReport(
+                        wifi = wifi,
+                        ip = cfg.ip,
+                        mac = cfg.mac,
+                        paired = cfg.token.isNotBlank(),
+                        rest = restR,
+                        upnp = upnpR,
+                        ws = wsR,
+                        ssdp = ssdpR,
+                    ),
+                )
+            }
         }
     }
 

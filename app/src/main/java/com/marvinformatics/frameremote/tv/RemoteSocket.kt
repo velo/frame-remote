@@ -25,6 +25,7 @@ class RemoteSocket(
     private val clientName: String,
     private val onToken: (String) -> Unit,
     private val onState: (State) -> Unit,
+    private val onError: (String) -> Unit = {},
 ) {
     enum class State { DISCONNECTED, CONNECTING, CONNECTED }
 
@@ -53,19 +54,29 @@ class RemoteSocket(
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     runCatching {
                         val msg = JSONObject(text)
-                        if (msg.optString("event") == "ms.channel.connect") {
-                            msg.optJSONObject("data")?.optString("token")
-                                ?.takeIf { it.isNotBlank() }?.let(onToken)
-                            synchronized(lock) {
-                                connected = true
-                                while (pending.isNotEmpty()) webSocket.send(pending.removeFirst())
+                        when (msg.optString("event")) {
+                            "ms.channel.connect" -> {
+                                msg.optJSONObject("data")?.optString("token")
+                                    ?.takeIf { it.isNotBlank() }?.let(onToken)
+                                synchronized(lock) {
+                                    connected = true
+                                    while (pending.isNotEmpty()) webSocket.send(pending.removeFirst())
+                                }
+                                onState(State.CONNECTED)
                             }
-                            onState(State.CONNECTED)
+                            "ms.channel.unauthorized" -> {
+                                onError("TV refused the pairing — use Re-pair in settings")
+                                webSocket.close(1000, null)
+                            }
                         }
                     }
                 }
 
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = dropped()
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    onError("Remote socket: ${t.message ?: t.javaClass.simpleName}")
+                    dropped()
+                }
+
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = dropped()
             })
         }

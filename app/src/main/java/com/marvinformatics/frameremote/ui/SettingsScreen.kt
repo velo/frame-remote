@@ -38,7 +38,12 @@ import com.marvinformatics.frameremote.TvViewModel
 import com.marvinformatics.frameremote.UiState
 
 @Composable
-fun SettingsScreen(vm: TvViewModel, state: UiState, onClose: () -> Unit) {
+fun SettingsScreen(
+    vm: TvViewModel,
+    state: UiState,
+    onClose: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
+) {
     var ip by remember(state.config.ip) { mutableStateOf(state.config.ip) }
     var mac by remember(state.config.mac) { mutableStateOf(state.config.mac) }
 
@@ -73,11 +78,27 @@ fun SettingsScreen(vm: TvViewModel, state: UiState, onClose: () -> Unit) {
         )
 
         Spacer(Modifier.height(20.dp))
+        if (!state.wifi) {
+            Text(
+                "Not on Wi-Fi — connect the phone to the TV's network first.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Spacer(Modifier.height(8.dp))
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = { vm.discover() }, enabled = !state.discovering) {
                 Text(if (state.discovering) "Searching…" else "Find my TV")
             }
             if (state.discovering) CircularProgressIndicator(Modifier.height(20.dp))
+        }
+        state.discoveryError?.let { err ->
+            Spacer(Modifier.height(8.dp))
+            Text(
+                err,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
 
         state.discovered.forEach { tv ->
@@ -142,10 +163,17 @@ fun SettingsScreen(vm: TvViewModel, state: UiState, onClose: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = { vm.forgetPairing() }) { Text("Forget pairing") }
+            Button(onClick = { vm.refreshPairing() }) { Text("Re-pair (show Allow prompt on TV)") }
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = { vm.forgetPairing() }) { Text("Forget pairing (stay unpaired)") }
         }
 
         Spacer(Modifier.height(24.dp))
+        OutlinedButton(onClick = onOpenDiagnostics, modifier = Modifier.fillMaxWidth()) {
+            Text("Diagnostics")
+        }
+
+        Spacer(Modifier.height(16.dp))
         Text(
             "Power-on from standby uses Wake-on-LAN and needs the TV's " +
                 "\"Power On with Mobile\" / network standby setting enabled.",

@@ -1,5 +1,7 @@
 package com.marvinformatics.frameremote.tv
 
+import android.content.Context
+import android.net.wifi.WifiManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.DatagramPacket
@@ -14,21 +16,43 @@ data class DiscoveredTv(
     val mac: String,
 )
 
+data class DiscoveryResult(
+    val tvs: List<DiscoveredTv> = emptyList(),
+    /** Human-readable reason when discovery could not run or found nothing. */
+    val error: String? = null,
+)
+
 /**
  * SSDP discovery. Samsung TVs answer an M-SEARCH for MediaRenderer:1 with a
  * LOCATION header pointing at their DMR description (port 9197). Each hit is
  * cross-checked against the Tizen REST API on 8001 to confirm it is a
  * Samsung TV and to auto-fill the name and MAC.
  *
+ * Two Android footguns handled here:
+ * - the M-SEARCH socket is explicitly bound to the Wi-Fi [android.net.Network]
+ *   — a bare DatagramSocket binds to the default network, which can be
+ *   cellular, and the probe then never reaches the LAN;
+ * - a WifiManager MulticastLock is held for the duration, since many ROMs
+ *   filter multicast/broadcast unless one is acquired.
+ *
  * Only works while the TV is awake — a TV in standby is undiscoverable,
  * which is why the app persists IP and MAC instead of discovering on demand.
  */
-class Ssdp(private val restApi: RestApi) {
+class Ssdp(private val context: Context, private val restApi: RestApi) {
 
-    suspend fun discover(timeoutMs: Int = 3000): List<DiscoveredTv> = withContext(Dispatchers.IO) {
+    suspend fun discover(timeoutMs: Int = 3000): DiscoveryResult = withContext(Dispatchers.IO) {
+        val wifi = WifiNet(context).wifiNetwork()
+            ?: return@withContext DiscoveryResult(error = "Not on Wi-Fi — connect the phone to the TV's network first")
+
+        val wifiManager = context.applicationContext
+            .getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        val multicastLock = wifiManager?.createMulticastLock("frame-remote-ssdp")
+            ?.apply { setReferenceCounted(false); acquire() }
+
         val ips = linkedSetOf<String>()
-        runCatching {
+        try {
             DatagramSocket().use { socket ->
+                wifi.bindSocket(socket)
                 socket.soTimeout = 500
                 val msg = ("M-SEARCH * HTTP/1.1\r\n" +
                         "HOST: 239.255.255.250:1900\r\n" +
@@ -55,12 +79,26 @@ class Ssdp(private val restApi: RestApi) {
                     }
                 }
             }
+        } catch (e: Exception) {
+            return@withContext DiscoveryResult(
+                error = "Discovery failed: ${e.message ?: e.javaClass.simpleName}",
+            )
+        } finally {
+            multicastLock?.release()
         }
 
-        ips.mapNotNull { ip ->
+        val tvs = ips.mapNotNull { ip ->
             restApi.deviceInfo(ip)?.let { info ->
                 DiscoveredTv(ip = ip, name = info.name, modelName = info.modelName, mac = info.wifiMac)
             }
         }
+        DiscoveryResult(
+            tvs = tvs,
+            error = when {
+                tvs.isNotEmpty() -> null
+                ips.isNotEmpty() -> "Found ${ips.size} UPnP device(s), but none answered like a Samsung TV — enter the IP manually"
+                else -> "No TV answered — is it awake and on this network? You can enter the IP manually below"
+            },
+        )
     }
 }

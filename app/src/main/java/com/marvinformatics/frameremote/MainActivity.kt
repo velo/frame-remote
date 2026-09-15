@@ -18,9 +18,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.marvinformatics.frameremote.ui.DiagnosticsScreen
 import com.marvinformatics.frameremote.ui.FrameRemoteTheme
 import com.marvinformatics.frameremote.ui.RemoteScreen
 import com.marvinformatics.frameremote.ui.SettingsScreen
+
+private enum class Screen { Remote, Settings, Diagnostics }
 
 class MainActivity : ComponentActivity() {
 
@@ -57,7 +60,7 @@ class MainActivity : ComponentActivity() {
 private fun App(vm: TvViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var showSettings by remember { mutableStateOf(false) }
+    var screen by remember { mutableStateOf(Screen.Remote) }
 
     LaunchedEffect(state.toast) {
         state.toast?.let {
@@ -68,9 +71,17 @@ private fun App(vm: TvViewModel) {
 
     if (!state.loaded) return
 
-    if (!state.config.isConfigured || showSettings) {
-        SettingsScreen(vm, state, onClose = { showSettings = false })
-    } else {
-        RemoteScreen(vm, state, onOpenSettings = { showSettings = true })
+    when {
+        screen == Screen.Diagnostics ->
+            DiagnosticsScreen(vm, state, onClose = { screen = Screen.Settings })
+        !state.config.isConfigured || screen == Screen.Settings ->
+            SettingsScreen(
+                vm,
+                state,
+                onClose = { screen = Screen.Remote },
+                onOpenDiagnostics = { screen = Screen.Diagnostics },
+            )
+        else ->
+            RemoteScreen(vm, state, onOpenSettings = { screen = Screen.Settings })
     }
 }
