@@ -3,6 +3,7 @@ package com.marvinformatics.frameremote
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,7 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -60,7 +61,22 @@ class MainActivity : ComponentActivity() {
 private fun App(vm: TvViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var screen by remember { mutableStateOf(Screen.Remote) }
+    // Survives rotation/config change/process-death restore.
+    var screen by rememberSaveable { mutableStateOf(Screen.Remote) }
+
+    // System back mirrors the on-screen back arrows: Diagnostics -> Settings,
+    // Settings -> Remote, and from the Remote screen it exits normally. On an
+    // unconfigured app the Settings screen IS the home screen (there is no
+    // remote to return to), so back exits from there rather than trapping the
+    // user — except Diagnostics, which still returns to Settings.
+    val backGoesSomewhere = when (screen) {
+        Screen.Diagnostics -> true
+        Screen.Settings -> state.config.isConfigured
+        Screen.Remote -> false
+    }
+    BackHandler(enabled = backGoesSomewhere) {
+        screen = if (screen == Screen.Diagnostics) Screen.Settings else Screen.Remote
+    }
 
     LaunchedEffect(state.toast) {
         state.toast?.let {
