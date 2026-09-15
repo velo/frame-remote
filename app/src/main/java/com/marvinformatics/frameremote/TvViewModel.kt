@@ -41,6 +41,15 @@ data class DiagReport(
     val ssdp: String,
 )
 
+/** How volume is being controlled right now. */
+enum class VolumeControl {
+    UNKNOWN,
+    /** UPnP absolute volume — the headline feature. */
+    ABSOLUTE,
+    /** UPnP refused (e.g. HTTP 401): stepping with KEY_VOLUP/KEY_VOLDOWN instead. */
+    KEYS,
+}
+
 data class UiState(
     val config: TvConfig = TvConfig(),
     val loaded: Boolean = false,
@@ -51,6 +60,9 @@ data class UiState(
     val volume: Int? = null,
     val muted: Boolean = false,
     val socketState: RemoteSocket.State = RemoteSocket.State.DISCONNECTED,
+    /** The TV silently refuses this client identity; Re-pair mints a new one. */
+    val pairingRefused: Boolean = false,
+    val volumeControl: VolumeControl = VolumeControl.UNKNOWN,
     val discovering: Boolean = false,
     val discovered: List<DiscoveredTv> = emptyList(),
     /** Why the last discovery found nothing — shown inline, not just a toast. */
@@ -64,7 +76,13 @@ data class UiState(
 class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     private companion object {
-        const val CLIENT_NAME = "FrameRemoteAndroid"
+        /** Base of the WS identity; legacy installs paired under the bare base. */
+        const val CLIENT_NAME_BASE = "FrameRemoteAndroid"
+
+        // 5 hex chars keep the full name's length a multiple of 3, so its
+        // base64 form needs no padding — the exact shape verified on the TV.
+        fun mintClientName(): String =
+            CLIENT_NAME_BASE + "-" + (1..5).map { "0123456789abcdef".random() }.joinToString("")
     }
 
     private val settings = SettingsRepository(app)
@@ -77,17 +95,27 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = _state
 
     private val socket = RemoteSocket(
-        clientName = CLIENT_NAME,
         onToken = { token ->
             viewModelScope.launch { settings.saveToken(token) }
             toast("Paired with the TV")
         },
-        onState = { s -> _state.update { it.copy(socketState = s) } },
-        onError = { msg -> if (msg.contains("refused")) toast(msg) },
+        onState = { s ->
+            _state.update {
+                it.copy(
+                    socketState = s,
+                    pairingRefused = if (s == RemoteSocket.State.CONNECTED) false else it.pairingRefused,
+                )
+            }
+        },
+        onError = { msg ->
+            if (msg.contains("refused")) {
+                _state.update { it.copy(pairingRefused = true) }
+                toast("TV refused this remote — see Settings for how to fix it")
+            }
+        },
     )
 
     private val artSocket = ArtSocket(
-        clientName = CLIENT_NAME,
         onArtMode = { on -> _state.update { it.copy(artMode = on) } },
     )
 
@@ -99,10 +127,22 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             settings.config.collect { cfg ->
+                if (cfg.clientName.isBlank()) {
+                    // First run mints a device-unique identity; an upgrade that
+                    // already holds a token keeps the legacy bare name so the
+                    // existing pairing stays valid.
+                    settings.saveClientName(
+                        if (cfg.token.isNotBlank()) CLIENT_NAME_BASE else mintClientName(),
+                    )
+                    return@collect // re-collected with the name set
+                }
                 val previous = _state.value.config
                 _state.update { it.copy(config = cfg, loaded = true) }
-                if (cfg.ip.isNotBlank() && (cfg.ip != previous.ip || cfg.token != previous.token)) {
+                if (cfg.ip.isNotBlank() &&
+                    (cfg.ip != previous.ip || cfg.token != previous.token || cfg.clientName != previous.clientName)
+                ) {
                     socket.disconnect()
+                    artSocket.disconnect()
                     connectSocket()
                 }
             }
@@ -157,12 +197,19 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (info != null) {
             val cfg = _state.value.config
-            artSocket.ensureConnected(ip, cfg.token)
-            artSocket.requestArtMode()
+            if (cfg.clientName.isNotBlank()) {
+                artSocket.ensureConnected(ip, cfg.token, cfg.clientName)
+                artSocket.requestArtMode()
+            }
             val vol = upnp.getVolume(ip)
-            val mute = upnp.getMute(ip)
+            val mute = if (vol != null) upnp.getMute(ip) else null
             _state.update {
                 it.copy(
+                    // The TV is reachable, so a UPnP failure here means the
+                    // absolute-volume service refused us (observed: HTTP 401
+                    // while unauthorized). Degrade to key stepping honestly
+                    // instead of showing a slider that does nothing.
+                    volumeControl = if (vol != null) VolumeControl.ABSOLUTE else VolumeControl.KEYS,
                     volume = if (System.currentTimeMillis() - volumeTouchedAt > 1500) vol ?: it.volume else it.volume,
                     muted = mute ?: it.muted,
                 )
@@ -172,7 +219,9 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun connectSocket() {
         val cfg = _state.value.config
-        if (cfg.ip.isNotBlank()) socket.ensureConnected(cfg.ip, cfg.token)
+        if (cfg.ip.isNotBlank() && cfg.clientName.isNotBlank()) {
+            socket.ensureConnected(cfg.ip, cfg.token, cfg.clientName)
+        }
     }
 
     private inline fun withIp(block: (String) -> Unit) {
@@ -238,7 +287,16 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
         volumeRequests.tryEmit(v)
     }
 
+    fun volumeUp() = sendKey("KEY_VOLUP")
+
+    fun volumeDown() = sendKey("KEY_VOLDOWN")
+
     fun toggleMute() {
+        if (_state.value.volumeControl == VolumeControl.KEYS) {
+            sendKey("KEY_MUTE")
+            _state.update { it.copy(muted = !it.muted) }
+            return
+        }
         viewModelScope.launch {
             val target = !_state.value.muted
             _state.update { it.copy(muted = target) }
@@ -288,14 +346,20 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Recovery action: drop the stored token and immediately reconnect, so
-     * the TV shows its Allow prompt again and we end PAIRED, not unpaired.
+     * Recovery action: mint a NEW client identity, drop the stored token and
+     * reconnect. Once a Samsung TV has denied a client name it refuses that
+     * name silently forever — reconnecting under the same identity never
+     * prompts again. A fresh name is a fresh device, so the TV shows its
+     * Allow prompt and we end PAIRED, not unpaired.
      */
     fun refreshPairing() {
         viewModelScope.launch {
+            settings.saveClientName(mintClientName())
             settings.clearToken()
-            delay(150) // let the config collector observe the cleared token
+            delay(150) // let the config collector observe the changes
             socket.disconnect()
+            artSocket.disconnect()
+            _state.update { it.copy(pairingRefused = false) }
             connectSocket()
             toast("Look at the TV — accept the Allow prompt")
         }
@@ -329,7 +393,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
                 upnpR = if (vol != null)
                     "ok — volume $vol (${System.currentTimeMillis() - t1} ms)"
                 else "FAILED — ${upnp.lastError ?: "no response"}"
-                wsR = WsProbe.test(cfg.ip, cfg.token, CLIENT_NAME)
+                wsR = WsProbe.test(cfg.ip, cfg.token, cfg.clientName.ifBlank { CLIENT_NAME_BASE })
             }
             val sd = ssdp.discover()
             val ssdpR = sd.error ?: "ok — found ${sd.tvs.joinToString { "${it.name} (${it.ip})" }}"

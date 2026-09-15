@@ -158,12 +158,43 @@ fun SettingsScreen(
                 if (state.config.token.isBlank())
                     "Not paired yet — the first key press pops an Allow prompt on the TV. Accept it once and the token is remembered."
                 else
-                    "Paired. The TV remembers this remote.",
+                    "Paired as \"${state.config.clientName}\". The TV remembers this remote.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (state.pairingRefused) {
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text(
+                            "The TV is refusing this remote",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Once a Samsung TV denies a device it refuses it silently — it will not " +
+                                "prompt again for the same identity. Re-pair below gets a new identity " +
+                                "so the TV asks again. If it still refuses, on the TV go to " +
+                                "Settings → General → External Device Manager → Device Connect Manager → " +
+                                "Device List and remove old entries, and make sure Access Notification " +
+                                "is not set to Off.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(8.dp))
             Button(onClick = { vm.refreshPairing() }) { Text("Re-pair (show Allow prompt on TV)") }
+            Text(
+                "Gets a new identity so the TV shows the Allow prompt again.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(Modifier.height(4.dp))
             TextButton(onClick = { vm.forgetPairing() }) { Text("Forget pairing (stay unpaired)") }
         }

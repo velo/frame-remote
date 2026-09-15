@@ -21,8 +21,6 @@ import org.json.JSONObject
  * We persist it (via [onToken]) so the prompt never comes back.
  */
 class RemoteSocket(
-    /** Client name shown in the TV's device manager. */
-    private val clientName: String,
     private val onToken: (String) -> Unit,
     private val onState: (State) -> Unit,
     private val onError: (String) -> Unit = {},
@@ -42,7 +40,7 @@ class RemoteSocket(
     }
 
     /** Opens the socket if needed. Safe to call before every send. */
-    fun ensureConnected(ip: String, token: String) {
+    fun ensureConnected(ip: String, token: String, clientName: String) {
         synchronized(lock) {
             if (ws != null) return
             onState(State.CONNECTING)

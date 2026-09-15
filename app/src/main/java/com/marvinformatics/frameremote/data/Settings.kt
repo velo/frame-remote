@@ -15,6 +15,13 @@ data class TvConfig(
     val mac: String = "",
     val token: String = "",
     val name: String = "",
+    /**
+     * The identity this app presents on the TV's WebSocket. Persisted so
+     * normal reconnects reuse the SAME name; only an explicit Re-pair mints
+     * a new one (a Samsung TV that has denied a client name refuses it
+     * silently forever — a fresh name is the only way to be prompted again).
+     */
+    val clientName: String = "",
 ) {
     val isConfigured: Boolean get() = ip.isNotBlank()
 }
@@ -26,6 +33,7 @@ class SettingsRepository(private val context: Context) {
         val MAC = stringPreferencesKey("tv_mac")
         val TOKEN = stringPreferencesKey("tv_token")
         val NAME = stringPreferencesKey("tv_name")
+        val CLIENT_NAME = stringPreferencesKey("client_name")
     }
 
     val config: Flow<TvConfig> = context.dataStore.data.map { p ->
@@ -34,6 +42,7 @@ class SettingsRepository(private val context: Context) {
             mac = p[Keys.MAC] ?: "",
             token = p[Keys.TOKEN] ?: "",
             name = p[Keys.NAME] ?: "",
+            clientName = p[Keys.CLIENT_NAME] ?: "",
         )
     }
 
@@ -50,6 +59,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun saveMac(mac: String) {
         context.dataStore.edit { it[Keys.MAC] = mac }
+    }
+
+    suspend fun saveClientName(name: String) {
+        context.dataStore.edit { it[Keys.CLIENT_NAME] = name }
     }
 
     suspend fun saveToken(token: String) {

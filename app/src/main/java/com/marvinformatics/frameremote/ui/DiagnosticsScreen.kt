@@ -55,6 +55,7 @@ fun DiagnosticsScreen(vm: TvViewModel, state: UiState, onClose: () -> Unit) {
         DiagRow("TV IP", state.config.ip.ifBlank { "not set" })
         DiagRow("TV MAC", state.config.mac.ifBlank { "not set" })
         DiagRow("Paired", if (state.config.token.isNotBlank()) "yes (token stored)" else "no")
+        DiagRow("Client identity", state.config.clientName.ifBlank { "not minted yet" })
         DiagRow(
             "Remote socket",
             state.socketState.name.lowercase(),

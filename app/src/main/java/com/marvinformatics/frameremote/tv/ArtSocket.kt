@@ -17,7 +17,6 @@ import java.util.UUID
  * back as d2d_service_message events.
  */
 class ArtSocket(
-    private val clientName: String,
     private val onArtMode: (Boolean) -> Unit,
 ) {
     private var client: OkHttpClient? = null
@@ -26,7 +25,7 @@ class ArtSocket(
     private var connected = false
     private val lock = Any()
 
-    fun ensureConnected(ip: String, token: String) {
+    fun ensureConnected(ip: String, token: String, clientName: String) {
         synchronized(lock) {
             if (ws != null) return
             if (clientIp != ip) {

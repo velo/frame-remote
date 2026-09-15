@@ -113,9 +113,23 @@ Release. Signing uses the `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 - **Settings → Diagnostics** shows the resolved IP/MAC/pairing state and a
   **Test connection** button that exercises each transport (REST :8001,
   UPnP :9197, WebSocket :8002, SSDP) and reports per-transport results.
-- If the TV stops accepting keys (token revoked, TV reset), use
-  **Re-pair** in settings: it drops the stored token and reconnects so the
-  TV shows its Allow prompt again.
+- **"TV refused the pairing"**: once a Samsung TV denies a device it
+  refuses that client identity *silently, forever* — it will not prompt
+  again for the same name. **Re-pair** in settings therefore mints a new
+  client identity (e.g. `FrameRemoteAndroid-7f3a2`), drops the stored token
+  and reconnects, so the TV treats it as a new device and shows the Allow
+  prompt again. Normal reconnects always reuse the same identity — only
+  Re-pair rotates it, so the TV's device list is not littered. If the TV
+  still refuses, on the TV go to *Settings → General → External Device
+  Manager → Device Connect Manager → Device List*, remove stale entries,
+  and make sure *Access Notification* is not set to Off. The TV holds the
+  veto here, not the app.
+- **Volume slider replaced by Vol −/+ buttons**: the TV's UPnP volume
+  service refused the request (observed as HTTP 401 while the TV distrusts
+  the device). The app degrades to KEY_VOLUP/KEY_VOLDOWN stepping over the
+  WebSocket and says so, instead of showing a dead slider. It returns to
+  the absolute slider automatically once UPnP answers again — usually
+  after pairing succeeds.
 - Discovery needs the TV awake; manual IP entry is always available in
   settings regardless of what discovery finds.
 

@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import com.marvinformatics.frameremote.TizenApps
 import com.marvinformatics.frameremote.TvViewModel
 import com.marvinformatics.frameremote.UiState
+import com.marvinformatics.frameremote.VolumeControl
 
 @Composable
 fun RemoteScreen(vm: TvViewModel, state: UiState, onOpenSettings: () -> Unit) {
@@ -153,40 +154,82 @@ private fun VolumeCard(vm: TvViewModel, state: UiState) {
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surface,
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = { vm.toggleMute() }) {
-                Icon(
-                    if (state.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = if (state.muted) "Unmute" else "Mute",
-                    tint = if (state.muted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+        if (state.volumeControl == VolumeControl.KEYS) {
+            // UPnP refused absolute volume (e.g. HTTP 401 while the TV
+            // distrusts this device) — step with TV keys instead of showing
+            // a slider that silently does nothing.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { vm.toggleMute() }) {
+                        Icon(
+                            if (state.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                            contentDescription = if (state.muted) "Unmute" else "Mute",
+                            tint = if (state.muted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    FilledTonalButton(
+                        onClick = { vm.volumeDown() },
+                        modifier = Modifier.height(44.dp),
+                        shape = RoundedCornerShape(14.dp),
+                    ) { Text("Vol −", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                    Spacer(Modifier.size(10.dp))
+                    FilledTonalButton(
+                        onClick = { vm.volumeUp() },
+                        modifier = Modifier.height(44.dp),
+                        shape = RoundedCornerShape(14.dp),
+                    ) { Text("Vol +", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                }
+                Text(
+                    "Absolute volume unavailable (TV refused UPnP) — using TV keys. Pairing usually fixes this.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, top = 2.dp),
                 )
             }
-            var dragging by remember { mutableStateOf(false) }
-            var dragValue by remember { mutableStateOf(0f) }
-            val shown = if (dragging) dragValue else (state.volume ?: 0).toFloat()
-            Slider(
-                value = shown,
-                onValueChange = {
-                    dragging = true
-                    dragValue = it
-                    vm.setVolume(it.toInt())
-                },
-                onValueChangeFinished = { dragging = false },
-                valueRange = 0f..100f,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = (if (dragging) dragValue.toInt() else state.volume)?.toString() ?: "–",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 8.dp, end = 4.dp),
-            )
+        } else {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { vm.toggleMute() }) {
+                    Icon(
+                        if (state.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = if (state.muted) "Unmute" else "Mute",
+                        tint = if (state.muted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    )
+                }
+                var dragging by remember { mutableStateOf(false) }
+                var dragValue by remember { mutableStateOf(0f) }
+                val shown = if (dragging) dragValue else (state.volume ?: 0).toFloat()
+                Slider(
+                    value = shown,
+                    onValueChange = {
+                        dragging = true
+                        dragValue = it
+                        vm.setVolume(it.toInt())
+                    },
+                    onValueChangeFinished = { dragging = false },
+                    valueRange = 0f..100f,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = (if (dragging) dragValue.toInt() else state.volume)?.toString() ?: "–",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 8.dp, end = 4.dp),
+                )
+            }
         }
     }
 }
