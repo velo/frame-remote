@@ -19,9 +19,7 @@ Wi-Fi/BT API 2.0.25), but it should work on most recent Tizen TVs.
 - **D-pad navigation** — up/down/left/right, OK, back, home
 - **One-tap app launch** — Plex and YouTube by Tizen app id; the button
   lights amber when that app is the one on screen (per-app REST status,
-  keyed off `visible` — `running` stays true for backgrounded apps). Home
-  is deliberately never highlighted: the firmware exposes no home-screen
-  state, and a guessed highlight would lie
+  keyed off `visible` — `running` stays true for backgrounded apps)
 - **SSDP discovery** — finds the TV on first run and auto-fills its IP and
   MAC; manual entry as fallback
 - Dark, one-handed, thumb-reachable layout
@@ -136,6 +134,19 @@ Release. Signing uses the `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
   after pairing succeeds.
 - Discovery needs the TV awake; manual IP entry is always available in
   settings regardless of what discovery finds.
+- **Why the Home button never lights up**: it can't, and that is by
+  design, not an oversight. Amber means "this is what the TV is showing",
+  and the TV offers no way to know it is on its home screen. Three
+  independent probes against the real TV all came up empty: candidate
+  home-screen app ids all return 404 on the per-app status endpoint, the
+  full `:8001/api/v2/` device info contains no current-app or
+  current-source field, and UPnP `AVTransport` reports
+  `NO_MEDIA_PRESENT` with an empty `CurrentURI` regardless of what the
+  panel shows (that transport is the DMR casting channel, not a mirror of
+  the screen). Inferring "home" from "neither tracked app visible and art
+  mode off" would also match live TV, Netflix, or any other untracked
+  app — and a highlight that lies is worse than none. So Home stays
+  neutral, always.
 
 ## Privacy
 

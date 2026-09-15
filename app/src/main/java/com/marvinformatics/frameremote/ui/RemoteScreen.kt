@@ -341,16 +341,24 @@ private fun BottomRow(vm: TvViewModel, state: UiState) {
             false -> "Art Mode · off"
             null -> "Art Mode"
         }
-        LabeledAction(label = artLabel) {
+        // Amber = active, matching the Plex/YouTube convention: icon AND
+        // caption take the primary colour only while art mode is actually
+        // on; off and unknown get the same neutral treatment as Back/Home.
+        val artOn = state.artMode == true
+        LabeledAction(
+            label = artLabel,
+            labelColor = if (artOn) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        ) {
             FilledIconButton(
                 onClick = { vm.toggleArtMode() },
                 enabled = state.reachable,
                 modifier = Modifier.size(72.dp),
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = if (state.artMode == true) MaterialTheme.colorScheme.primary
+                    containerColor = if (artOn) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = if (state.artMode == true) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.primary,
+                    contentColor = if (artOn) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
             ) {
                 Icon(Icons.Filled.Wallpaper, contentDescription = "Toggle Art Mode", modifier = Modifier.size(30.dp))
@@ -368,14 +376,18 @@ private fun BottomRow(vm: TvViewModel, state: UiState) {
 }
 
 @Composable
-private fun LabeledAction(label: String, content: @Composable () -> Unit) {
+private fun LabeledAction(
+    label: String,
+    labelColor: Color? = null,
+    content: @Composable () -> Unit,
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         content()
         Spacer(Modifier.height(4.dp))
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = labelColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
