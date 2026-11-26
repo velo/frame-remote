@@ -21,6 +21,20 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Require a store changelog for the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          CODE=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts)
+          NAME=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          if [ "v$NAME" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match versionName $NAME"; exit 1
+          fi
+          CHANGELOG="fastlane/metadata/android/en-US/changelogs/$CODE.txt"
+          if [ ! -s "$CHANGELOG" ]; then
+            echo "::error::missing $CHANGELOG"; exit 1
+          fi
+          echo "CHANGELOG=$CHANGELOG" >> "$GITHUB_ENV"
+
       - name: Decode signing keystore
         if: github.event_name != 'pull_request'
         env:
@@ -55,4 +69,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: frame-remote-*.apk
-          generate_release_notes: true
+          body_path: ${{ env.CHANGELOG }}

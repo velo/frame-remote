@@ -1,0 +1,2 @@
+• Store listing metadata for F-Droid and IzzyOnDroid
+• APK no longer embeds the encrypted dependency-info block

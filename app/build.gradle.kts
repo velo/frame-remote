@@ -12,8 +12,8 @@ android {
         applicationId = "com.marvinformatics.frameremote"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.0.7"
+        versionCode = 9
+        versionName = "1.0.8"
     }
 
     val keystorePath: String? = System.getenv("KEYSTORE_FILE")
@@ -44,6 +44,10 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"

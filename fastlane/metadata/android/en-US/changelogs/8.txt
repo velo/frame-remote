@@ -1,0 +1,3 @@
+• −/+ buttons next to the volume slider step by exactly 1
+• D-pad left/right arrows sit on the wheel
+• Power-off button (holds the power key, like a long press on the remote)
