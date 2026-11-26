@@ -1,6 +1,9 @@
 package com.marvinformatics.frameremote
 
 import android.app.Application
+import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.marvinformatics.frameremote.data.SettingsRepository
@@ -59,6 +62,7 @@ data class UiState(
     val powerState: String = "unknown",
     /** null = unknown (art channel not answering) */
     val artMode: Boolean? = null,
+    val artwork: ImageBitmap? = null,
     /**
      * Foreground state of the launchable apps (null = unknown). Drives the
      * amber highlight only — a transient poll failure keeps the previous
@@ -133,6 +137,11 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
 
     private val artSocket = ArtSocket(
         onArtMode = { on -> _state.update { it.copy(artMode = on) } },
+        onArtwork = { _, jpeg ->
+            BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)?.asImageBitmap()?.let { art ->
+                _state.update { it.copy(artwork = art) }
+            }
+        },
     )
 
     private val volumeRequests = MutableSharedFlow<Int>(extraBufferCapacity = 64)
@@ -221,6 +230,7 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             if (cfg.clientName.isNotBlank()) {
                 artSocket.ensureConnected(ip, cfg.token, cfg.clientName)
                 artSocket.requestArtMode()
+                artSocket.requestArtwork()
             }
             // One concurrent burst per poll: volume, mute, and the two app
             // foreground probes (~30 ms each on the LAN).

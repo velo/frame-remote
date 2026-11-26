@@ -1,6 +1,11 @@
 package com.marvinformatics.frameremote.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,7 +71,15 @@ fun RemoteScreen(vm: TvViewModel, state: UiState, onOpenSettings: () -> Unit) {
     ) {
         Header(state, onPowerOff = { vm.powerOff() }, onOpenSettings = onOpenSettings)
 
-        Spacer(Modifier.weight(1f))
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            state.artwork?.let { ArtworkPreview(it, dimmed = state.artMode != true) }
+        }
 
         if (state.config.isConfigured && !state.reachable) {
             WakeTvButton(vm)
@@ -132,6 +145,20 @@ private fun Header(state: UiState, onPowerOff: () -> Unit, onOpenSettings: () ->
             Icon(Icons.Filled.Settings, contentDescription = "Settings")
         }
     }
+}
+
+@Composable
+private fun ArtworkPreview(art: ImageBitmap, dimmed: Boolean) {
+    Image(
+        bitmap = art,
+        contentDescription = "Artwork on the TV",
+        contentScale = ContentScale.Fit,
+        alpha = if (dimmed) 0.35f else 1f,
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(art.width.toFloat() / art.height)
+            .clip(RoundedCornerShape(12.dp)),
+    )
 }
 
 @Composable
