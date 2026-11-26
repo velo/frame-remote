@@ -1,0 +1,1 @@
+• Removed the power-off button: on 2024 Frame TVs no local command powers the set off, and the attempt only toggled Art Mode

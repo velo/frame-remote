@@ -97,7 +97,6 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         /** Base of the WS identity; legacy installs paired under the bare base. */
         const val CLIENT_NAME_BASE = "FrameRemoteAndroid"
-        const val POWER_HOLD_MS = 3000L
 
         // 5 hex chars keep the full name's length a multiple of 3, so its
         // base64 form needs no padding — the exact shape verified on the TV.
@@ -348,20 +347,6 @@ class TvViewModel(app: Application) : AndroidViewModel(app) {
             setVolume((current + delta).coerceIn(0, 100))
         } else {
             sendKey(key)
-        }
-    }
-
-    /**
-     * A tapped KEY_POWER only toggles Art Mode; holding it is what the
-     * physical remote's long-press sends, and that reaches real standby.
-     */
-    fun powerOff() {
-        connectSocket()
-        socket.sendKey("KEY_POWER", "Press")
-        viewModelScope.launch {
-            delay(POWER_HOLD_MS)
-            socket.sendKey("KEY_POWER", "Release")
-            toast("Powering off…")
         }
     }
 

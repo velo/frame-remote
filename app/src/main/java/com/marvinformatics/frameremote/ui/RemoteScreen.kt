@@ -69,7 +69,7 @@ fun RemoteScreen(vm: TvViewModel, state: UiState, onOpenSettings: () -> Unit) {
             .fillMaxSize()
             .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
-        Header(state, onPowerOff = { vm.powerOff() }, onOpenSettings = onOpenSettings)
+        Header(state, onOpenSettings)
 
         Box(
             Modifier
@@ -105,7 +105,7 @@ fun RemoteScreen(vm: TvViewModel, state: UiState, onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun Header(state: UiState, onPowerOff: () -> Unit, onOpenSettings: () -> Unit) {
+private fun Header(state: UiState, onOpenSettings: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(
@@ -132,14 +132,6 @@ private fun Header(state: UiState, onPowerOff: () -> Unit, onOpenSettings: () ->
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-        IconButton(onClick = onPowerOff, enabled = state.reachable) {
-            Icon(
-                Icons.Filled.PowerSettingsNew,
-                contentDescription = "Power off",
-                tint = if (state.reachable) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
         IconButton(onClick = onOpenSettings) {
             Icon(Icons.Filled.Settings, contentDescription = "Settings")

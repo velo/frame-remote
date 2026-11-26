@@ -4,7 +4,7 @@ A remote for Samsung Frame TVs (Tizen) that talks to the TV directly over your l
 <ul>
 <li>Exact volume slider (0–100, matches the TV's on-screen number) with −/+ steps and mute</li>
 <li>Art Mode toggle that shows the TV's current art state</li>
-<li>Power off, and Wake-on-LAN for a TV in standby</li>
+<li>Wake-on-LAN for a TV in standby</li>
 <li>D-pad, OK, Back and Home</li>
 <li>One-tap Plex and YouTube launch, highlighted when that app is on screen</li>
 <li>Finds the TV automatically on the network (SSDP), with manual IP entry as a fallback</li>
