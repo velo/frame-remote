@@ -17,7 +17,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -62,7 +64,7 @@ fun RemoteScreen(vm: TvViewModel, state: UiState, onOpenSettings: () -> Unit) {
             .fillMaxSize()
             .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
-        Header(state, onOpenSettings)
+        Header(state, onPowerOff = { vm.powerOff() }, onOpenSettings = onOpenSettings)
 
         Spacer(Modifier.weight(1f))
 
@@ -90,7 +92,7 @@ fun RemoteScreen(vm: TvViewModel, state: UiState, onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun Header(state: UiState, onOpenSettings: () -> Unit) {
+private fun Header(state: UiState, onPowerOff: () -> Unit, onOpenSettings: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(
@@ -117,6 +119,14 @@ private fun Header(state: UiState, onOpenSettings: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+        IconButton(onClick = onPowerOff, enabled = state.reachable) {
+            Icon(
+                Icons.Filled.PowerSettingsNew,
+                contentDescription = "Power off",
+                tint = if (state.reachable) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         IconButton(onClick = onOpenSettings) {
             Icon(Icons.Filled.Settings, contentDescription = "Settings")
@@ -239,6 +249,9 @@ private fun VolumeCard(vm: TvViewModel, state: UiState) {
                         tint = if (state.muted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     )
                 }
+                IconButton(onClick = { vm.volumeDown() }) {
+                    Icon(Icons.Filled.Remove, contentDescription = "Volume down")
+                }
                 var dragging by remember { mutableStateOf(false) }
                 var dragValue by remember { mutableStateOf(0f) }
                 val shown = if (dragging) dragValue else (state.volume ?: 0).toFloat()
@@ -253,6 +266,9 @@ private fun VolumeCard(vm: TvViewModel, state: UiState) {
                     valueRange = 0f..100f,
                     modifier = Modifier.weight(1f),
                 )
+                IconButton(onClick = { vm.volumeUp() }) {
+                    Icon(Icons.Filled.Add, contentDescription = "Volume up")
+                }
                 Text(
                     text = (if (dragging) dragValue.toInt() else state.volume)?.toString() ?: "–",
                     style = MaterialTheme.typography.titleMedium,
@@ -267,16 +283,18 @@ private fun VolumeCard(vm: TvViewModel, state: UiState) {
 
 @Composable
 private fun DPad(vm: TvViewModel) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(260.dp),
-        contentAlignment = Alignment.Center,
-    ) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        DPadWheel(vm)
+    }
+}
+
+@Composable
+private fun DPadWheel(vm: TvViewModel) {
+    Box(Modifier.size(260.dp), contentAlignment = Alignment.Center) {
         Surface(
             shape = CircleShape,
             color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.size(260.dp),
+            modifier = Modifier.fillMaxSize(),
         ) {}
         DirButton(Icons.Filled.KeyboardArrowUp, "Up", Modifier.align(Alignment.TopCenter)) { vm.sendKey("KEY_UP") }
         DirButton(Icons.Filled.KeyboardArrowDown, "Down", Modifier.align(Alignment.BottomCenter)) { vm.sendKey("KEY_DOWN") }
